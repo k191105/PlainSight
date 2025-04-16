@@ -35,6 +35,18 @@ def initialize_session_state():
     
     if 'show_sample' not in st.session_state:
         st.session_state.show_sample = False
+        
+    if 'clause_summaries' not in st.session_state:
+        st.session_state.clause_summaries = {}
+        
+    if 'clause_detailed_risks' not in st.session_state:
+        st.session_state.clause_detailed_risks = {}
+        
+    if 'clause_simple_risks' not in st.session_state:
+        st.session_state.clause_simple_risks = {}
+        
+    if 'clause_user_notes' not in st.session_state:
+        st.session_state.clause_user_notes = {}
 
 def update_risk_metrics(clauses):
     """Update risk metrics based on analyzed clauses"""
@@ -46,49 +58,70 @@ def update_risk_metrics(clauses):
         'low_risk_clauses': []
     }
     
-    # Analyze each clause and categorize risks
-    for clause_id, clause_text in clauses.items():
-        # Analyze the clause text for risk indicators
-        risk_indicators = {
-            'high': [
-                'indemnify', 'warranty', 'liability', 'termination',
-                'confidential', 'exclusive', 'assignment', 'jurisdiction',
-                'penalty', 'damages', 'breach', 'default'
-            ],
-            'medium': [
-                'payment', 'fee', 'cost', 'expense', 'charge',
-                'notice', 'period', 'time', 'date', 'deadline'
-            ]
-        }
+    # First check if we have detailed risk analysis from GPT
+    total_risks = 0
+    
+    for clause_id in clauses.keys():
+        # Get the detailed risks for this clause if available
+        detailed_risks = st.session_state.get('clause_detailed_risks', {}).get(clause_id, [])
+        simple_risks = st.session_state.get('clause_simple_risks', {}).get(clause_id, [])
         
-        # Count risk indicators
-        high_risk_count = sum(1 for indicator in risk_indicators['high'] 
-                            if indicator.lower() in clause_text.lower())
-        medium_risk_count = sum(1 for indicator in risk_indicators['medium'] 
-                              if indicator.lower() in clause_text.lower())
-        
-        # Determine risk level
-        if high_risk_count >= 2:
-            risk_level = 'high'
-        elif high_risk_count >= 1 or medium_risk_count >= 2:
-            risk_level = 'medium'
+        # If we have GPT-analyzed risks, use them to determine risk level
+        if detailed_risks:
+            # Count risks by severity
+            high_risks = sum(1 for risk in detailed_risks if isinstance(risk, dict) and risk.get('severity') == 'high')
+            medium_risks = sum(1 for risk in detailed_risks if isinstance(risk, dict) and risk.get('severity') == 'medium')
+            
+            # Determine risk level based on risk counts
+            if high_risks > 0:
+                st.session_state.risk_metrics['high_risk_clauses'].append(clause_id)
+            elif medium_risks > 0 or len(simple_risks) > 0:
+                st.session_state.risk_metrics['medium_risk_clauses'].append(clause_id)
+            else:
+                st.session_state.risk_metrics['low_risk_clauses'].append(clause_id)
+                
+            # Add to total risk count
+            total_risks += len(detailed_risks)
         else:
-            risk_level = 'low'
-        
-        # Categorize the clause
-        if risk_level == 'high':
-            st.session_state.risk_metrics['high_risk_clauses'].append(clause_id)
-        elif risk_level == 'medium':
-            st.session_state.risk_metrics['medium_risk_clauses'].append(clause_id)
-        else:
-            st.session_state.risk_metrics['low_risk_clauses'].append(clause_id)
+            # Fallback to keyword-based risk analysis if GPT analysis is not available
+            clause_text = clauses[clause_id]
+            
+            # Analyze the clause text for risk indicators
+            risk_indicators = {
+                'high': [
+                    'indemnify', 'warranty', 'liability', 'termination',
+                    'confidential', 'exclusive', 'assignment', 'jurisdiction',
+                    'penalty', 'damages', 'breach', 'default'
+                ],
+                'medium': [
+                    'payment', 'fee', 'cost', 'expense', 'charge',
+                    'notice', 'period', 'time', 'date', 'deadline'
+                ]
+            }
+            
+            # Count risk indicators
+            high_risk_count = sum(1 for indicator in risk_indicators['high'] 
+                                if indicator.lower() in clause_text.lower())
+            medium_risk_count = sum(1 for indicator in risk_indicators['medium'] 
+                                  if indicator.lower() in clause_text.lower())
+            
+            # Determine risk level
+            if high_risk_count >= 2:
+                risk_level = 'high'
+                st.session_state.risk_metrics['high_risk_clauses'].append(clause_id)
+            elif high_risk_count >= 1 or medium_risk_count >= 2:
+                risk_level = 'medium'
+                st.session_state.risk_metrics['medium_risk_clauses'].append(clause_id)
+            else:
+                risk_level = 'low'
+                st.session_state.risk_metrics['low_risk_clauses'].append(clause_id)
+            
+            # Add to total risk count (only count medium and high risks)
+            if risk_level != 'low':
+                total_risks += 1
     
     # Update total risks
-    st.session_state.risk_metrics['total_risks'] = (
-        len(st.session_state.risk_metrics['high_risk_clauses']) +
-        len(st.session_state.risk_metrics['medium_risk_clauses']) +
-        len(st.session_state.risk_metrics['low_risk_clauses'])
-    )
+    st.session_state.risk_metrics['total_risks'] = total_risks
 
 def set_current_clause(clause_title: str) -> None:
     """
@@ -150,24 +183,29 @@ def get_current_clause_data() -> Dict[str, Any]:
     # Get user note
     user_note = st.session_state.get('clause_user_notes', {}).get(current, "")
     
+    # Get risk analysis from GPT (if available)
+    simple_risks = st.session_state.get('clause_simple_risks', {}).get(current, [])
+    detailed_risks = st.session_state.get('clause_detailed_risks', {}).get(current, [])
+    
     # Compile the result
     result = {
         "title": current,
         "text": clause_text,
         "summary": summary,
-        "risks": [],  # We'll populate this based on risk level
-        "detailed_risks": [],  # We'll populate this based on risk level
+        "risks": simple_risks,  # Use GPT-generated simple risks
+        "detailed_risks": detailed_risks,  # Use GPT-generated detailed risks
         "risk_level": risk_level,
         "user_note": user_note
     }
     
-    # Add appropriate risks based on risk level
-    if risk_level == "high":
-        result["risks"] = ["Multiple high-risk indicators found in this clause"]
-        result["detailed_risks"] = ["This clause contains multiple high-risk terms that may require careful review"]
-    elif risk_level == "medium":
-        result["risks"] = ["Some risk indicators found in this clause"]
-        result["detailed_risks"] = ["This clause contains some terms that may require attention"]
+    # If no GPT-generated risks are available, use the fallback approach
+    if not simple_risks and not detailed_risks:
+        if risk_level == "high":
+            result["risks"] = ["Multiple high-risk indicators found in this clause"]
+            result["detailed_risks"] = [{"problematic_text": "", "explanation": "This clause contains multiple high-risk terms that may require careful review", "severity": "high"}]
+        elif risk_level == "medium":
+            result["risks"] = ["Some risk indicators found in this clause"]
+            result["detailed_risks"] = [{"problematic_text": "", "explanation": "This clause contains some terms that may require attention", "severity": "medium"}]
     
     return result
 
@@ -179,6 +217,9 @@ def save_user_note(clause_title: str, note_text: str) -> None:
         clause_title: Title of the clause
         note_text: Note text to save
     """
+    if 'clause_user_notes' not in st.session_state:
+        st.session_state.clause_user_notes = {}
+        
     st.session_state.clause_user_notes[clause_title] = note_text
 
 def get_sample_contract_data() -> Dict[str, Any]:
@@ -211,6 +252,14 @@ def get_sample_contract_data() -> Dict[str, Any]:
                 "risks": [
                     "The 30-day payment term may be too long for small businesses with cash flow concerns."
                 ],
+                "detailed_risks": [
+                    {
+                        "problematic_text": "The Client shall pay the Consultant within 30 days of receipt of invoice",
+                        "explanation": "The 30-day payment term may be too long for small businesses with cash flow concerns.",
+                        "legal_reference": "ACCC guidelines on fair payment terms for small businesses",
+                        "severity": "medium"
+                    }
+                ],
                 "risk_level": "medium"
             },
             {
@@ -227,6 +276,14 @@ def get_sample_contract_data() -> Dict[str, Any]:
                 "risks": [
                     "The confidentiality obligations continue indefinitely, which may be overly restrictive."
                 ],
+                "detailed_risks": [
+                    {
+                        "problematic_text": "The obligations of confidentiality shall survive the termination of this Agreement and continue indefinitely",
+                        "explanation": "The confidentiality obligations continue indefinitely, which may be overly restrictive.",
+                        "legal_reference": "Australian common law on restraint of trade",
+                        "severity": "medium"
+                    }
+                ],
                 "risk_level": "medium"
             },
             {
@@ -235,6 +292,14 @@ def get_sample_contract_data() -> Dict[str, Any]:
                 "summary": "Either party can end this agreement with 30 days' notice. Immediate termination is possible if there's a serious breach that isn't fixed within 14 days, or if either party goes bankrupt. You'll still need to pay for all work completed up to the termination date.",
                 "risks": [
                     "The 30-day notice period for termination may be problematic if you need to exit quickly."
+                ],
+                "detailed_risks": [
+                    {
+                        "problematic_text": "This Agreement may be terminated by either party with 30 days written notice",
+                        "explanation": "The 30-day notice period for termination may be problematic if you need to exit quickly.",
+                        "legal_reference": "ACCC guidelines on fair termination clauses",
+                        "severity": "low"
+                    }
                 ],
                 "risk_level": "medium"
             },
@@ -245,6 +310,20 @@ def get_sample_contract_data() -> Dict[str, Any]:
                 "risks": [
                     "This broad limitation of liability clause may be unenforceable under Australian Consumer Law for certain types of loss.",
                     "The clause attempts to exclude liability for consequential losses which may be unfair under the ACCC's unfair contract terms guidance."
+                ],
+                "detailed_risks": [
+                    {
+                        "problematic_text": "The Consultant's liability shall not exceed the fees paid by the Client to the Consultant under this Agreement",
+                        "explanation": "This broad limitation of liability clause may be unenforceable under Australian Consumer Law for certain types of loss.",
+                        "legal_reference": "Section 64A of the Australian Consumer Law",
+                        "severity": "high"
+                    },
+                    {
+                        "problematic_text": "Neither party shall be liable for any indirect, special, incidental or consequential damages",
+                        "explanation": "The clause attempts to exclude liability for consequential losses which may be unfair under the ACCC's unfair contract terms guidance.",
+                        "legal_reference": "ACCC Unfair Contract Terms guidance",
+                        "severity": "high"
+                    }
                 ],
                 "risk_level": "high"
             },

@@ -40,12 +40,18 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 def init_db():
     """Initialize the database by creating all tables"""
-    try:
-        Base.metadata.create_all(bind=engine)
-        logger.info("Database tables created or verified")
-    except Exception as e:
-        logger.error(f"Error initializing database: {str(e)}")
-        raise
+    # Add flag to track if DB has been initialized in this session
+    if not getattr(init_db, 'initialized', False):
+        try:
+            Base.metadata.create_all(bind=engine)
+            logger.info("Database tables created or verified")
+            # Mark as initialized
+            init_db.initialized = True
+        except Exception as e:
+            logger.error(f"Error initializing database: {str(e)}")
+            raise
+    else:
+        logger.debug("Database already initialized in this session")
 
 def get_db():
     """Get a database session"""
