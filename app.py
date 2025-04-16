@@ -12,6 +12,7 @@ from components.dashboard import display_dashboard
 from components.simple_summary import display_simple_summary
 from components.detailed_analysis import display_detailed_analysis
 from components.full_contract import display_full_contract
+from components.landing_page import display_landing_page
 from utils.session_manager import initialize_session_state, update_risk_metrics
 
 # Initialize database
@@ -21,7 +22,8 @@ init_db()
 st.set_page_config(
     page_title="ContractClarify - Australian Contract Analysis",
     page_icon="⚖️",
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="collapsed"
 )
 
 # Initialize session state
@@ -37,8 +39,11 @@ def login_user(email, password):
         return True
     return False
 
-def register_user(email, password):
+def register_user(email, password, confirm_password=None):
     """Register a new user"""
+    if confirm_password and password != confirm_password:
+        return False, "Passwords do not match"
+        
     db = next(get_db())
     if get_user_by_email(db, email):
         return False, "Email already registered"
@@ -50,51 +55,51 @@ def register_user(email, password):
 
 # Authentication UI
 if not st.session_state.get('logged_in'):
-    st.title("Plain Sight")
-    st.subheader("Australian Contract Analysis for Small Businesses")
+    # Use the new landing page component
+    display_landing_page(
+        login_callback=login_user,
+        register_callback=register_user
+    )
     
-    tab1, tab2 = st.tabs(["Login", "Register"])
-    
-    with tab1:
-        with st.form("login_form"):
-            email = st.text_input("Email")
-            password = st.text_input("Password", type="password")
-            submit = st.form_submit_button("Login")
-            
-            if submit:
-                if login_user(email, password):
-                    st.success("Logged in successfully!")
-                    st.rerun()
-                else:
-                    st.error("Invalid email or password")
-    
-    with tab2:
-        with st.form("register_form"):
-            new_email = st.text_input("Email")
-            new_password = st.text_input("Password", type="password")
-            confirm_password = st.text_input("Confirm Password", type="password")
-            submit = st.form_submit_button("Register")
-            
-            if submit:
-                if new_password != confirm_password:
-                    st.error("Passwords do not match")
-                else:
-                    success, message = register_user(new_email, new_password)
-                    if success:
-                        st.success(message)
-                        st.rerun()
-                    else:
-                        st.error(message)
-    
+    # Stop execution here for non-logged in users
     st.stop()
 
 # Main app content (only shown when logged in)
 st.title("Plain Sight")
 st.subheader("Australian Contract Analysis for Small Businesses")
 
-# Display user info and credits
-st.sidebar.write(f"Logged in as: {st.session_state.user.email}")
-st.sidebar.write(f"Credits remaining: {st.session_state.user.credits}")
+# Enhanced sidebar with user account section
+with st.sidebar:
+    st.markdown("### My Account")
+    st.markdown("---")
+    
+    # User email with icon
+    st.markdown(f"""
+    <div style="display: flex; align-items: center; margin-bottom: 1rem;">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+            <circle cx="12" cy="7" r="4"></circle>
+        </svg>
+        <span style="margin-left: 0.5rem;">{st.session_state.user.email}</span>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Credits display with icon
+    credits_color = "red" if st.session_state.user.credits <= 1 else "green"
+    st.markdown(f"""
+    <div style="display: flex; align-items: center; margin-bottom: 1rem;">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"></circle>
+            <path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"></path>
+            <path d="M12 18V6"></path>
+        </svg>
+        <span style="margin-left: 0.5rem; color: {credits_color};">Credits: {st.session_state.user.credits}</span>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Warning message if credits are low
+    if st.session_state.user.credits <= 1:
+        st.warning("You're running low on credits! Consider purchasing more.")
 
 # File upload
 uploaded_file = st.file_uploader("Upload your contract document", type=["pdf", "docx", "txt"])
@@ -102,7 +107,7 @@ uploaded_file = st.file_uploader("Upload your contract document", type=["pdf", "
 # Process the document when uploaded
 if uploaded_file is not None:
     if st.session_state.user.credits <= 0:
-        st.error("You have no credits remaining. Please contact support.")
+        st.error("You have no credits remaining. Please contact support to purchase more credits.")
         st.stop()
     
     # Create a unique identifier for this file
@@ -158,9 +163,15 @@ if uploaded_file is not None:
                 }
             )
             
-            # Deduct credit
-            st.session_state.user.credits -= 1
-            db.commit()
+            # Deduct credit and update database
+            try:
+                st.session_state.user.credits -= 1
+                db.commit()
+                st.success(f"Analysis complete! Credits remaining: {st.session_state.user.credits}")
+            except Exception as e:
+                st.error(f"Error updating credits: {str(e)}")
+                db.rollback()
+                st.stop()
             
             # Mark analysis as complete
             st.session_state.contract_analyzed = True
