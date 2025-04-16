@@ -2,6 +2,7 @@ import os
 import json
 import time
 import hashlib
+import re
 from typing import Dict, List, Any, Optional, Tuple
 from openai import OpenAI
 from prompts.extraction_prompt import EXTRACTION_PROMPT
@@ -9,6 +10,31 @@ from prompts.summary_prompt import SUMMARY_PROMPT
 from prompts.risk_prompt import RISK_PROMPT
 from dotenv import load_dotenv
 import streamlit as st
+
+# Add this for debugging
+import traceback
+import sys
+from datetime import datetime
+
+# Debug logging function
+def debug_log(message, data=None):
+    """Write debug info to a file with absolute path"""
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
+    # Use absolute path in user's home directory for reliable access
+    log_path = os.path.join(os.path.expanduser("~"), "plainsight_debug.log")
+    try:
+        with open(log_path, "a") as f:
+            f.write(f"[{timestamp}] {message}\n")
+            if data is not None:
+                f.write(f"DATA: {str(data)[:1000]}")
+                if len(str(data)) > 1000:
+                    f.write("... (truncated)")
+                f.write("\n")
+            f.write("-" * 80 + "\n")
+        # Also print to stderr for immediate visibility
+        print(f"DEBUG: {message}", file=sys.stderr, flush=True)
+    except Exception as e:
+        print(f"ERROR LOGGING: {str(e)}", file=sys.stderr, flush=True)
 
 load_dotenv()
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
@@ -144,7 +170,11 @@ def analyze_risks(clause_title: str, clause_text: str) -> Tuple[List[str], List[
         - List of risk statements (for backward compatibility)
         - List of dictionaries with detailed risk information including problematic text
     """
+    debug_log(f"Starting risk analysis for clause: {clause_title}")
+    debug_log("Clause text sample", clause_text[:100])
+    
     if MOCK_MODE:
+        debug_log("Using MOCK_MODE, returning mock data")
         # Return mock data for development
         mock_risks = {
             "1. Definitions": [],
@@ -195,45 +225,146 @@ def analyze_risks(clause_title: str, clause_text: str) -> Tuple[List[str], List[
     
     # Prepare prompt
     prompt = RISK_PROMPT.format(clause_title=clause_title, clause_text=clause_text)
+    debug_log("Prompt prepared", prompt)
+    
+    def call_llm(model_name="gpt-4o"):
+        """Helper function to call OpenAI API with error handling"""
+        debug_log(f"Calling OpenAI API with model: {model_name}")
+        try:
+            response = client.chat.completions.create(
+                model=model_name,
+                messages=[
+                    {"role": "system", "content": "You are a legal risk analysis system specializing in Australian contract law. Identify potential risks in contract clauses for small businesses, focusing on unfair contract terms under the Australian Consumer Law and ACCC guidelines. You must respond with valid JSON in the exact format specified in the prompt."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.2,  # Low temperature for consistency
+                max_tokens=800
+            )
+            response_text = response.choices[0].message.content.strip()
+            debug_log(f"Raw response from {model_name}", response_text)
+            return response_text
+        except Exception as e:
+            error_str = str(e).lower()
+            # Check for common rate limit errors
+            if "rate limit" in error_str or "quota" in error_str or "capacity" in error_str or "limit" in error_str:
+                debug_log(f"⚠️ RATE LIMIT ERROR with {model_name}: {str(e)}")
+                print(f"⚠️ OPENAI RATE LIMIT DETECTED: {str(e)}", file=sys.stderr, flush=True)
+                
+                # Add this message to your UI
+                st.error(f"OpenAI API rate limit reached. Please try again later or check your usage limits.")
+            else:
+                debug_log(f"Error calling {model_name}: {str(e)}")
+            return None
     
     try:
-        # Call OpenAI API
-        response = client.chat.completions.create(model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": "You are a legal risk analysis system specializing in Australian contract law. Identify potential risks in contract clauses for small businesses, focusing on unfair contract terms under the Australian Consumer Law and ACCC guidelines."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.2,  # Low temperature for consistency
-            max_tokens=800
-        )
+        # First try with GPT-4o
+        response_text = call_llm("gpt-4o")
         
-        # Parse the response
-        response_text = response.choices[0].message.content.strip()
+        # Check if response looks generic
+        generic_patterns = [
+            "multiple high-risk terms",
+            "may require careful review",
+            "This clause contains",
+            "potential risks"
+        ]
         
+        is_generic = False
+        if response_text:
+            is_generic = all(pattern.lower() in response_text.lower() for pattern in generic_patterns[:2])
+            
+        # If response looks generic, try with GPT-4-turbo
+        if is_generic:
+            debug_log("Got generic response from GPT-4o, trying GPT-4-turbo")
+            backup_response = call_llm("gpt-4-turbo")
+            if backup_response:
+                response_text = backup_response
+                debug_log("Using GPT-4-turbo response instead")
+            else:
+                # If both GPT-4 models fail, try GPT-3.5-turbo as a last resort
+                debug_log("GPT-4 models failed, trying GPT-3.5-turbo as fallback")
+                fallback_response = call_llm("gpt-3.5-turbo")
+                if fallback_response:
+                    response_text = fallback_response
+                    debug_log("Using GPT-3.5-turbo response as last resort")
+                    # Add a notice in the UI
+                    st.warning("Using GPT-3.5 model due to API limitations. Results may be less accurate.")
+        
+        if not response_text:
+            debug_log("No response received from OpenAI models")
+            return [], []
+            
+        # Rest of processing remains the same
         # Try to parse as JSON
         detailed_risks = []
         simple_risks = []
         
         try:
-            # Extract JSON if it's within markdown code blocks
+            debug_log("Attempting to parse JSON response")
+            # First try to find JSON in the response
+            json_str = None
             if "```json" in response_text:
                 json_str = response_text.split("```json")[1].split("```")[0]
+                debug_log("Found JSON in ```json block", json_str)
             elif "```" in response_text:
                 json_str = response_text.split("```")[1].split("```")[0]
+                debug_log("Found JSON in ``` block", json_str)
             else:
-                json_str = response_text
-                
-            detailed_risks = json.loads(json_str)
+                # Try to find JSON array in the text
+                json_match = re.search(r'\[\s*\{.*\}\s*\]', response_text, re.DOTALL)
+                if json_match:
+                    json_str = json_match.group(0)
+                    debug_log("Found JSON array in text", json_str)
+                else:
+                    json_str = response_text
+                    debug_log("Using entire response as JSON", json_str)
+            
+            # Clean up the JSON string
+            json_str = json_str.strip()
+            # Remove any trailing commas
+            json_str = re.sub(r',(\s*[}\]])', r'\1', json_str)
+            debug_log("Cleaned JSON string", json_str)
+            
+            # Parse the JSON
+            try:
+                detailed_risks = json.loads(json_str)
+                debug_log("Successfully parsed JSON", detailed_risks)
+            except json.JSONDecodeError as e:
+                debug_log(f"JSON parsing error: {str(e)}", json_str)
+                raise
+            
+            # Validate the structure
+            if not isinstance(detailed_risks, list):
+                error_msg = "Response is not a JSON array"
+                debug_log(error_msg, detailed_risks)
+                raise ValueError(error_msg)
             
             # Extract simple risks for backward compatibility
             for risk_item in detailed_risks:
+                if not isinstance(risk_item, dict):
+                    error_msg = "Risk item is not a dictionary"
+                    debug_log(error_msg, risk_item)
+                    raise ValueError(error_msg)
+                if "explanation" not in risk_item:
+                    error_msg = "Risk item missing 'explanation' field"
+                    debug_log(error_msg, risk_item)
+                    raise ValueError(error_msg)
                 simple_risks.append(risk_item.get("explanation", ""))
                 
+            # Add clear error for generic responses
+            if detailed_risks and all(not risk.get("problematic_text") for risk in detailed_risks):
+                debug_log("WARNING: Response contains no specific problematic text references")
+            
+            debug_log(f"Returning {len(simple_risks)} risks, {len(detailed_risks)} detailed risks")
+            return simple_risks, detailed_risks
+        
         except (json.JSONDecodeError, ValueError, IndexError) as e:
-            print(f"Error parsing JSON response: {str(e)}")
+            debug_log(f"Exception during JSON parsing: {type(e).__name__}: {str(e)}")
+            debug_log("Traceback", traceback.format_exc())
             
             # Fallback to the old method for backward compatibility
+            debug_log("Falling back to manual text parsing")
             if "no significant risks" in response_text.lower() or "no risks" in response_text.lower():
+                debug_log("No risks detected in response")
                 return [], []
             
             # Extract risk points
@@ -248,28 +379,38 @@ def analyze_risks(clause_title: str, clause_text: str) -> Tuple[List[str], List[
                         risk = risk[5:].strip()
                     
                     if risk and len(risk) > 10:  # Only include substantial risk descriptions
-                        simple_risks.append(risk)
-                        # Create a basic detailed risk item
-                        detailed_risks.append({
-                            "problematic_text": "",  # No specific text identified
+                        debug_log(f"Extracted risk: {risk}")
+                        # Create a proper dictionary structure for the risk
+                        risk_dict = {
+                            "problematic_text": "",  # We don't have the exact text in this case
                             "explanation": risk,
-                            "legal_reference": "",
-                            "severity": "medium"  # Default severity
-                        })
+                            "legal_reference": "General Australian contract law principles",
+                            "severity": "medium"  # Default to medium severity
+                        }
+                        detailed_risks.append(risk_dict)
+                        simple_risks.append(risk)
             
             # If we couldn't parse list items but there's content, use the whole response
-            if not simple_risks and len(response_text) > 10:
-                simple_risks = [response_text]
-                detailed_risks = [{
-                    "problematic_text": "",
+            if not detailed_risks and len(response_text) > 10:
+                debug_log("Using entire response as a single risk")
+                risk_dict = {
+                    "problematic_text": "",  # We don't have the exact text in this case
                     "explanation": response_text,
-                    "legal_reference": "",
-                    "severity": "medium"
-                }]
+                    "legal_reference": "General Australian contract law principles",
+                    "severity": "medium"  # Default to medium severity
+                }
+                detailed_risks = [risk_dict]
+                simple_risks = [response_text]
                 
-        return simple_risks, detailed_risks
-    
+        except Exception as e:
+            debug_log(f"Uncaught exception in analyze_risks: {type(e).__name__}: {str(e)}")
+            debug_log("Traceback", traceback.format_exc())
+            print(f"Error in GPT risk analysis: {str(e)}", file=sys.stderr, flush=True)
+            # Return empty lists if API call fails
+            return [], []
     except Exception as e:
-        print(f"Error in GPT risk analysis: {str(e)}")
+        debug_log(f"Uncaught exception in analyze_risks: {type(e).__name__}: {str(e)}")
+        debug_log("Traceback", traceback.format_exc())
+        print(f"Error in GPT risk analysis: {str(e)}", file=sys.stderr, flush=True)
         # Return empty lists if API call fails
         return [], []

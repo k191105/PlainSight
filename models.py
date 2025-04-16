@@ -21,7 +21,11 @@ class User(Base):
         self.password_hash = bcrypt.hashpw(password.encode('utf-8'), salt).decode('utf-8')
     
     def check_password(self, password):
-        return bcrypt.checkpw(password.encode('utf-8'), self.password_hash.encode('utf-8'))
+        try:
+            return bcrypt.checkpw(password.encode('utf-8'), self.password_hash.encode('utf-8'))
+        except ValueError:
+            # If the stored hash is invalid, return False
+            return False
 
 class ContractAnalysis(Base):
     __tablename__ = 'contract_analyses'

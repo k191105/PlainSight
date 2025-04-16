@@ -4,7 +4,7 @@ import tempfile
 from utils.document_parser import extract_text_from_document
 from utils.llm_interface import extract_clauses
 from db import init_db, get_db, create_user, get_user_by_email, save_analysis
-from models import User
+from models import User, ContractAnalysis
 import sqlalchemy.orm
 
 # Import modularized components
@@ -15,8 +15,10 @@ from components.full_contract import display_full_contract
 from components.landing_page import display_landing_page
 from utils.session_manager import initialize_session_state, update_risk_metrics
 
-# Initialize database
-init_db()
+# Initialize database only once
+if 'db_initialized' not in st.session_state:
+    init_db()
+    st.session_state.db_initialized = True
 
 # Page configuration
 st.set_page_config(
@@ -42,16 +44,16 @@ def login_user(email, password):
 def register_user(email, password, confirm_password=None):
     """Register a new user"""
     if confirm_password and password != confirm_password:
-        return False, "Passwords do not match"
+        return False, "Passwords do not match. Please make sure both passwords are identical."
         
     db = next(get_db())
     if get_user_by_email(db, email):
-        return False, "Email already registered"
+        return False, "This email is already registered. Please try logging in instead."
     try:
         user = create_user(db, email, password)
-        return True, "Registration successful"
+        return True, "Registration successful! You can now log in."
     except Exception as e:
-        return False, str(e)
+        return False, f"Registration failed: {str(e)}"
 
 # Authentication UI
 if not st.session_state.get('logged_in'):
@@ -100,6 +102,53 @@ with st.sidebar:
     # Warning message if credits are low
     if st.session_state.user.credits <= 1:
         st.warning("You're running low on credits! Consider purchasing more.")
+    
+    # Logout button
+    if st.button("Log Out", type="secondary", use_container_width=True):
+        st.session_state.logged_in = False
+        st.session_state.user = None
+        st.rerun()
+    
+    st.markdown("---")
+    
+    # Analysis History
+    st.markdown("### Analysis History")
+    db = next(get_db())
+    analyses = db.query(ContractAnalysis).filter(
+        ContractAnalysis.user_id == st.session_state.user.id
+    ).order_by(ContractAnalysis.created_at.desc()).all()
+    
+    if analyses:
+        for analysis in analyses:
+            with st.expander(f"{analysis.original_filename} - {analysis.created_at.strftime('%Y-%m-%d %H:%M')}"):
+                st.markdown("**Analysis Results:**")
+                if analysis.analysis_results:
+                    if 'risk_metrics' in analysis.analysis_results:
+                        metrics = analysis.analysis_results['risk_metrics']
+                        st.markdown(f"""
+                        - Total Risks: {metrics.get('total_risks', 0)}
+                        - High Risk Clauses: {len(metrics.get('high_risk_clauses', []))}
+                        - Medium Risk Clauses: {len(metrics.get('medium_risk_clauses', []))}
+                        - Low Risk Clauses: {len(metrics.get('low_risk_clauses', []))}
+                        """)
+    else:
+        st.info("No analysis history yet. Upload a contract to get started!")
+    
+    st.markdown("---")
+    
+    # About Plain Sight
+    st.markdown("### About Plain Sight")
+    st.markdown("""
+    Plain Sight is an AI-powered contract analysis tool designed specifically for Australian small businesses. 
+    Our platform helps you understand complex legal documents by:
+    
+    - Breaking down contracts into easy-to-understand sections
+    - Highlighting potential risks and important clauses
+    - Providing plain English explanations
+    - Tracking your analysis history
+    
+    Start by uploading your contract document above to get a detailed analysis.
+    """)
 
 # File upload
 uploaded_file = st.file_uploader("Upload your contract document", type=["pdf", "docx", "txt"])

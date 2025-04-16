@@ -647,6 +647,17 @@ def annotate_clause_risks(clause_text: str, problematic_segments: List[Dict[str,
         clause_text (str): The full legal clause text
         problematic_segments (List[Dict]): List of dictionaries containing problematic text segments
     """
+    # Convert string segments to dictionary format if needed
+    if problematic_segments and isinstance(problematic_segments[0], str):
+        problematic_segments = [
+            {
+                'problematic_text': segment,
+                'explanation': segment,
+                'severity': 'medium'
+            }
+            for segment in problematic_segments
+        ]
+    
     analyzer = LegalTextAnalyzer()
     analyzer.annotate_clause_risks(clause_text, problematic_segments)
 
@@ -662,6 +673,17 @@ def highlight_problematic_texts(clause_text: str, problematic_segments: List[Dic
     Returns:
         str: HTML string with highlighted problematic segments
     """
+    # Convert string segments to dictionary format if needed
+    if problematic_segments and isinstance(problematic_segments[0], str):
+        problematic_segments = [
+            {
+                'problematic_text': segment,
+                'explanation': segment,
+                'severity': 'medium'
+            }
+            for segment in problematic_segments
+        ]
+    
     analyzer = LegalTextAnalyzer()
     return analyzer.highlight_problematic_texts(clause_text, problematic_segments)
 
@@ -674,5 +696,16 @@ def display_highlighted_clause(clause_text: str, problematic_segments: List[Dict
         clause_text (str): The full legal clause text
         problematic_segments (List[Dict]): List of dictionaries containing problematic text segments
     """
+    # Convert string segments to dictionary format if needed
+    if problematic_segments and isinstance(problematic_segments[0], str):
+        problematic_segments = [
+            {
+                'problematic_text': segment,
+                'explanation': segment,
+                'severity': 'medium'
+            }
+            for segment in problematic_segments
+        ]
+    
     analyzer = LegalTextAnalyzer()
     analyzer.display_highlighted_clause(clause_text, problematic_segments)
