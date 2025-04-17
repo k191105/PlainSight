@@ -137,9 +137,9 @@ def display_landing_page(login_callback, register_callback):
         top: 0;
         left: 0;
         width: 100vw;
-        height: 120vh;
+        height: 100vh;
         overflow: hidden;
-        opacity: 0.35; /* Increased from 0.3 for brightness */
+        opacity: 0.32; /* Increased from 0.3 for brightness */
         z-index: 0;
         font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
         color: #8b97a7; /* Brightened from #6b7280 */
@@ -205,15 +205,16 @@ def display_landing_page(login_callback, register_callback):
     /* Main content container */
     .content-container {
         position: relative;
-        min-height: 100vh;
+        top: 20vh;
+        left: 50%;
+        transform: translate(-50%, 0);
         display: flex;
-        flex-direction: row;
+        flex-direction: column;
         align-items: center;
         justify-content: center;
         z-index: 10;
         padding: 1rem;
-        padding-bottom: 0 !important; /* Reduce bottom padding */
-        margin-bottom: 0 !important;
+        width: 100%;
     }
     
     /* Button container styling for Streamlit buttons */
@@ -236,8 +237,23 @@ def display_landing_page(login_callback, register_callback):
         transition: all 0.3s ease !important;
     }
     
+    /* Primary button styling (Log In) */
+    .stButton > [data-testid="baseButton-primary"] {
+        background: linear-gradient(90deg, #10b981, #3b82f6) !important;
+        color: white !important;
+        border: none !important;
+    }
+    
+    /* Secondary button styling (Sign Up) */
+    .stButton > [data-testid="baseButton-secondary"] {
+        background-color: rgba(16, 185, 129, 0.1) !important;
+        color: #10b981 !important;
+        border: 1px solid #10b981 !important;
+    }
+    
     .stButton > button:hover {
         transform: translateY(-0.25rem) !important;
+        box-shadow: 0 15px 20px -3px rgba(0, 0, 0, 0.2) !important;
     }
     
     /* Title styling to match React - Increased size and fixed specificity */
@@ -252,7 +268,7 @@ def display_landing_page(login_callback, register_callback):
         text-align: center !important;
         line-height: 1.1 !important; /* Add line height control */
         display: block !important; /* Ensure display is block */
-        margin-bottom: 0 !important;
+        margin-bottom: 0.5rem !important;
     }
     
     /* Subtitle with reduced margin */
@@ -279,28 +295,6 @@ def display_landing_page(login_callback, register_callback):
     /* Make sure Streamlit elements are on top */
     .element-container, .stButton, button {
         z-index: 50 !important;
-    }
-    
-    /* Primary button - login */
-    .primary-btn {
-        background-color: #10b981 !important; /* bg-green-600 */
-        color: white !important;
-        border: none !important;
-    }
-    
-    .primary-btn:hover {
-        background-color: #059669 !important; /* bg-green-500 */
-    }
-    
-    /* Secondary button - signup */
-    .secondary-btn {
-        background-color: transparent !important;
-        color: #10b981 !important; /* text-green-500 */
-        border: 1px solid #10b981 !important; /* border-green-500 */
-    }
-    
-    .secondary-btn:hover {
-        background-color: rgba(16, 185, 129, 0.1) !important; /* bg-green-500 bg-opacity-10 */
     }
     
     /* Form styling */
@@ -430,11 +424,12 @@ def display_landing_page(login_callback, register_callback):
     
     .button-container {
         position: relative;
-        top: 2rem;
         z-index: 30;
         display: flex;
         justify-content: center;
         gap: 2rem;
+        width: 100%;
+        margin-top: 3rem;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -469,17 +464,21 @@ def display_landing_page(login_callback, register_callback):
         </div>
         """, unsafe_allow_html=True)
         
-        # Main content container - restructured for better control
+        # Main content container - title and subtitle only
         st.markdown("""
         <div class="content-container">
             <div class="title-container">
                 <h1 class="app-title">Plain Sight</h1>
-                <p class="app-subtitle">Australian Contract Analysis for Small Businesses</p>
+                <p class="app-subtitle">AI-Powered Contract Analysis. For Australia.</p>
             </div>
+        </div>
         """, unsafe_allow_html=True)
         
-        # Replace JavaScript buttons with native Streamlit buttons within the content container
-        button_col1, button_col2, button_col3 = st.columns([1, 2, 1])
+        # Separate container for buttons with proper spacing
+        st.markdown("<div style='height: 185px;'></div>", unsafe_allow_html=True)
+        
+        # Create a clean button row
+        button_col1, button_col2, button_col3 = st.columns([1, 1, 1])
         with button_col2:
             col1, col2 = st.columns(2)
             with col1:
@@ -487,12 +486,9 @@ def display_landing_page(login_callback, register_callback):
                     st.session_state.page = 'login'
                     st.rerun()
             with col2:
-                if st.button("Sign Up", use_container_width=True):
+                if st.button("Sign Up", type="secondary", use_container_width=True):
                     st.session_state.page = 'register'
                     st.rerun()
-        
-        # Close the content container div
-        st.markdown("</div>", unsafe_allow_html=True)
         
     elif st.session_state.page == 'login':
         # LOGIN PAGE
@@ -507,7 +503,6 @@ def display_landing_page(login_callback, register_callback):
         # Create container for login form
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
-            st.markdown('<div class="auth-container">', unsafe_allow_html=True)
             st.markdown("""
             <div class="form-header">
                 <h2>Welcome Back</h2>
@@ -556,7 +551,6 @@ def display_landing_page(login_callback, register_callback):
         # Create container for register form
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
-            st.markdown('<div class="auth-container">', unsafe_allow_html=True)
             st.markdown("""
             <div class="form-header">
                 <h2>Create Account</h2>
@@ -577,10 +571,17 @@ def display_landing_page(login_callback, register_callback):
                 if submit:
                     success, message = register_callback(new_email, new_password, confirm_password)
                     if success:
-                        st.session_state.message = {'text': message, 'type': 'success'}
-                        st.session_state.message_time = time.time()
-                        time.sleep(0.1)  # Brief pause for UI update
-                        st.rerun()
+                        # Auto-login after successful registration
+                        if login_callback(new_email, new_password):
+                            st.session_state.message = {'text': 'Account created and logged in successfully!', 'type': 'success'}
+                            st.session_state.message_time = time.time()
+                            time.sleep(0.1)  # Brief pause for UI update
+                            st.rerun()
+                        else:
+                            # Fall back to showing registration success if auto-login fails
+                            st.session_state.message = {'text': message, 'type': 'success'}
+                            st.session_state.message_time = time.time()
+                            st.rerun()
                     else:
                         st.session_state.message = {'text': message, 'type': 'error'}
                         st.session_state.message_time = time.time()
