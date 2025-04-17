@@ -1,6 +1,11 @@
 import streamlit as st
 from utils.session_manager import get_current_clause_data, set_current_clause, save_user_note, get_sample_contract_data
 from utils.text_highlighter import annotate_clause_risks
+from utils.lucide_icons import get_risk_icon
+
+LUCIDE_ICON_HIGH_RISK = get_risk_icon("high")
+LUCIDE_ICON_MEDIUM_RISK = get_risk_icon("medium")
+LUCIDE_ICON_LOW_RISK = get_risk_icon("low")
 
 def display_detailed_analysis(is_sample=False):
     """
@@ -105,11 +110,11 @@ def display_detailed_analysis(is_sample=False):
                 
                 # Simple risk display if no detailed risks
                 if sample_clause["risks"]:
-                    st.markdown("### ⚠️ Risk Analysis")
+                    st.markdown("### Risk Analysis")
                     for risk in sample_clause["risks"]:
                         st.markdown(f"- {risk}")
                 else:
-                    st.markdown("### ✅ Risk Analysis")
+                    st.markdown("### Annotation Details")
                     st.markdown("No significant risks identified in this clause.")
 
             # User notes
@@ -126,7 +131,7 @@ def display_detailed_analysis(is_sample=False):
                                                  st.session_state[f"note_input_{sample_clause['title']}"]))
             
             # Plain English Summary is now moved above the clause text
-            st.markdown("### 📘 Plain English Summary")
+            st.markdown("### Plain English Summary")
             st.markdown(sample_clause["summary"])
     else:
         # Check if contract has been analyzed

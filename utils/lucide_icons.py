@@ -2,6 +2,8 @@
 Utility functions for using Lucide icons in Streamlit
 """
 
+import base64
+
 def lucide_icon_svg(icon_name, size=24, color="currentColor", stroke_width=2):
     """
     Returns SVG markup for the specified Lucide icon
@@ -47,3 +49,27 @@ def get_risk_icon(risk_level, size=16):
         return lucide_icon_svg("info", size=size, color="#f59e0b")
     else:  # low
         return lucide_icon_svg("check-circle", size=size, color="#10b981")
+
+def get_safe_icon(risk_level, size=16):
+    """
+    Returns the appropriate risk icon for a given risk level as a base64 encoded image
+    that can be safely used in Streamlit buttons without unsafe_allow_html
+    
+    Args:
+        risk_level: Risk level (high, medium, low)
+        size: Size of the icon
+    
+    Returns:
+        Base64 encoded image for the icon
+    """
+    svg = ""
+    if risk_level == "high":
+        svg = lucide_icon_svg("alert-triangle", size=size, color="#ef4444")
+    elif risk_level == "medium":
+        svg = lucide_icon_svg("info", size=size, color="#f59e0b") 
+    else:  # low
+        svg = lucide_icon_svg("check-circle", size=size, color="#10b981")
+    
+    # Convert SVG to base64
+    b64 = base64.b64encode(svg.encode("utf-8")).decode("utf-8")
+    return f"data:image/svg+xml;base64,{b64}"

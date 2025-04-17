@@ -4,7 +4,7 @@ import tempfile
 from utils.document_parser import extract_text_from_document
 from utils.llm_interface import extract_clauses, summarize_clause, analyze_risks
 from db import init_db, get_db, create_user, get_user_by_email, save_analysis
-from models import User
+from models import User, ContractAnalysis
 import sqlalchemy.orm
 
 # Import modularized components
@@ -22,7 +22,8 @@ init_db()
 st.set_page_config(
     page_title="ContractClarify - Australian Contract Analysis",
     page_icon="⚖️",
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="collapsed"
 )
 
 # Initialize session state
@@ -67,9 +68,62 @@ if not st.session_state.get('logged_in'):
 st.title("Plain Sight")
 st.subheader("Australian Contract Analysis for Small Businesses")
 
-# Display user info and credits
-st.sidebar.write(f"Logged in as: {st.session_state.user.email}")
-st.sidebar.write(f"Credits remaining: {st.session_state.user.credits}")
+# Enhanced sidebar with user account section
+with st.sidebar:
+    st.markdown("### My Account")
+    st.markdown("---")
+    
+    # User email with icon
+    st.markdown(f"""
+    <div style="display: flex; align-items: center; margin-bottom: 1rem;">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+            <circle cx="12" cy="7" r="4"></circle>
+        </svg>
+        <span style="margin-left: 0.5rem;">{st.session_state.user.email}</span>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Credits display with icon
+    credits_color = "red" if st.session_state.user.credits <= 1 else "green"
+    st.markdown(f"""
+    <div style="display: flex; align-items: center; margin-bottom: 1rem;">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"></circle>
+            <path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"></path>
+            <path d="M12 18V6"></path>
+        </svg>
+        <span style="margin-left: 0.5rem; color: {credits_color};">Credits: {st.session_state.user.credits}</span>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Warning message if credits are low
+    if st.session_state.user.credits <= 1:
+        st.warning("You're running low on credits! Consider purchasing more.")
+    
+    # Logout button
+    if st.button("Log Out", type="secondary", use_container_width=True):
+        st.session_state.logged_in = False
+        st.session_state.user = None
+        st.rerun()
+    
+    st.markdown("---")
+    
+    
+    # About Plain Sight
+    st.markdown("### About Plain Sight")
+    st.markdown("""
+    Plain Sight is an AI-powered contract analysis tool designed specifically for Australian small businesses. 
+    Our platform helps you understand complex legal documents by:
+    
+    - Breaking down contracts into easy-to-understand sections
+    - Highlighting potential risks and important clauses
+    - Providing plain English explanations
+    - Tracking your analysis history
+    
+    Start by uploading your contract document above to get a detailed analysis.
+    """)
+
 
 # File upload
 uploaded_file = st.file_uploader("Upload your contract document", type=["pdf", "docx", "txt"])
